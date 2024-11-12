@@ -1,352 +1,957 @@
-// script.js
-
+// Variables globales
 let signaturePad;
 let currentPenColor = '#000000';
+let currentStream = null;
+let activePreview = null;
 
+// Almacenamiento de imágenes
+const imageStore = {
+    before: null,
+    after: null,
+    signature: null
+};
+
+// Inicialización cuando el DOM está listo
 document.addEventListener('DOMContentLoaded', () => {
     initializeTheme();
-    initializeColorPickers();
     initializeSignaturePad();
-    initializePhotoUploads();
-    initializeButtons();
+    initializeCamera();
     initializeFormReset();
+    initializePhotoSystem();
+    setupPhotoInputs();
 });
 
 // Inicialización del tema
 function initializeTheme() {
-    const isDark = localStorage.getItem('theme') === 'dark';
-    if (isDark) {
-        document.body.classList.add('dark-theme');
-        updateThemeIcon(true);
-    }
-
-    document.getElementById('themeToggle').addEventListener('click', () => {
-        document.body.classList.toggle('dark-theme');
-        const isDarkNow = document.body.classList.contains('dark-theme');
-        localStorage.setItem('theme', isDarkNow ? 'dark' : 'light');
-        updateThemeIcon(isDarkNow);
-        signaturePad.penColor = isDarkNow ? '#FFFFFF' : currentPenColor;
-    });
-}
-
-function updateThemeIcon(isDark) {
-    const icon = document.querySelector('#themeToggle i');
-    icon.className = isDark ? 'fas fa-sun' : 'fas fa-moon';
-}
-
-// Inicialización de selectores de color
-function initializeColorPickers() {
-    const colorMap = {
-        'bgColor': '--bg-color',
-        'primaryColor': '--primary-color',
-        'textColor': '--text-color'
+    const defaultColors = {
+        bgColor: '#f5f5f5',
+        primaryColor: '#3b82f6',
+        textColor: '#1a1a1a'
     };
 
-    Object.entries(colorMap).forEach(([inputId, cssVar]) => {
-        const input = document.getElementById(inputId);
-        const savedColor = localStorage.getItem(inputId);
-        
-        if (savedColor) {
-            input.value = savedColor;
-            document.documentElement.style.setProperty(cssVar, savedColor);
-        }
-        
+    Object.entries(defaultColors).forEach(([key, defaultValue]) => {
+        const input = document.getElementById(key);
+        if (!input) return;
+
+        // Cargar color guardado o usar default
+        const savedColor = localStorage.getItem(key) || defaultValue;
+        input.value = savedColor;
+        document.documentElement.style.setProperty(`--${key.replace('Color', '')}-color`, savedColor);
+
+        // Manejar cambios
         input.addEventListener('input', (e) => {
             const color = e.target.value;
-            document.documentElement.style.setProperty(cssVar, color);
-            localStorage.setItem(inputId, color);
-            if (inputId === 'primaryColor') updateUIWithPrimaryColor(color);
+            document.documentElement.style.setProperty(`--${key.replace('Color', '')}-color`, color);
+            localStorage.setItem(key, color);
         });
     });
 }
 
-function updateUIWithPrimaryColor(color) {
-    document.querySelectorAll('.primary-color').forEach(el => {
-        el.style.backgroundColor = color;
-    });
-}
-
-// Inicialización del pad de firma
-function initializeSignaturePad() {
-    const canvas = document.getElementById('signaturePad');
-    const parent = canvas.parentElement;
-    canvas.width = parent.offsetWidth;
-    canvas.height = 200;
-
-    signaturePad = new SignaturePad(canvas, {
-        penColor: currentPenColor,
-        backgroundColor: 'rgb(255, 255, 255)',
-        minWidth: 1,
-        maxWidth: 2.5
-    });
-
-    document.getElementById('clearSignature').addEventListener('click', () => {
-        signaturePad.clear();
-        showNotification('Firma borrada', 'success');
-    });
-
-    document.getElementById('changeColor').addEventListener('click', () => {
-        currentPenColor = currentPenColor === '#000000' ? '#0000FF' : '#000000';
-        signaturePad.penColor = currentPenColor;
-        showNotification('Color de firma cambiado', 'success');
-    });
-
-    window.addEventListener('resize', resizeSignaturePad);
-}
-
-function resizeSignaturePad() {
-    const canvas = document.getElementById('signaturePad');
-    const parent = canvas.parentElement;
-    const oldData = signaturePad.toData();
-    canvas.width = parent.offsetWidth;
-    canvas.height = 200;
-    signaturePad.clear();
-    if (oldData) signaturePad.fromData(oldData);
-}
-
-// Inicialización de carga de fotos
-function initializePhotoUploads() {
+// Sistema de fotos
+function initializePhotoSystem() {
     ['Before', 'After'].forEach(type => {
         const preview = document.getElementById(`preview${type}`);
-        const input = document.getElementById(`foto${type}`);
+        const fileInput = document.getElementById(`fileInput${type}`);
+        const chooseBtn = document.getElementById(`choose${type}`);
 
-        preview.addEventListener('click', () => input.click());
-        input.addEventListener('change', (e) => handleImageUpload(e, `preview${type}`));
+        if (preview) {
+            preview.addEventListener('click', () => handlePreviewClick(type));
+        }
+
+        if (chooseBtn) {
+            chooseBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (fileInput) fileInput.click();
+            });
+        }
+
+        if (fileInput) {
+            fileInput.addEventListener('change', (e) => handleFileSelect(e, type.toLowerCase()));
+        }
     });
 }
 
-function handleImageUpload(event, previewId) {
+function setupPhotoInputs() {
+    const modal = document.getElementById('cameraModal');
+    const closeBtn = document.getElementById('closeModal');
+    const captureBtn = document.getElementById('captureBtn');
+
+    if (modal) {
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) stopCamera();
+        });
+    }
+
+    if (closeBtn) {
+        closeBtn.addEventListener('click', stopCamera);
+    }
+
+    if (captureBtn) {
+        captureBtn.addEventListener('click', capturePhoto);
+    }
+
+    // Manejar tecla Escape
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && modal && !modal.classList.contains('hidden')) {
+            stopCamera();
+        }
+    });
+}
+
+function handlePreviewClick(type) {
+    const preview = document.getElementById(`preview${type}`);
+    if (!preview || preview.querySelector('img')) return;
+    
+    const fileInput = document.getElementById(`fileInput${type}`);
+    if (fileInput) fileInput.click();
+}
+
+function handleFileSelect(event, type) {
     const file = event.target.files[0];
-    const preview = document.getElementById(previewId);
-    
     if (!file) return;
-    
+
     if (!file.type.startsWith('image/')) {
-        showNotification('Por favor, selecciona un archivo de imagen válido', 'error');
+        showToast('Por favor selecciona una imagen válida', 'error');
         return;
     }
 
     const reader = new FileReader();
-    reader.onload = function(e) {
-        const container = document.createElement('div');
-        container.className = 'image-container';
-        
-        const img = document.createElement('img');
-        img.src = e.target.result;
-        
-        const deleteBtn = document.createElement('button');
-        deleteBtn.className = 'delete-image-btn';
-        deleteBtn.innerHTML = '<i class="fas fa-times"></i>';
-        deleteBtn.onclick = (e) => {
-            e.stopPropagation();
-            resetPreviewArea(preview);
-            event.target.value = '';
-        };
-
-        container.appendChild(img);
-        container.appendChild(deleteBtn);
-        
-        preview.innerHTML = '';
-        preview.classList.add('has-image');
-        preview.appendChild(container);
-        
-        showNotification('Imagen cargada correctamente', 'success');
+    reader.onload = (e) => {
+        updatePreview(type, e.target.result);
+        imageStore[type] = e.target.result;
     };
-
+    reader.onerror = () => showToast('Error al cargar la imagen', 'error');
     reader.readAsDataURL(file);
 }
 
-function resetPreviewArea(preview) {
-    preview.innerHTML = `
-        <i class="fas fa-camera text-3xl mb-2"></i>
-        <p>Click para subir foto</p>
-    `;
-    preview.classList.remove('has-image');
+// Manejo de la cámara
+function initializeCamera() {
+    const cameraButtons = document.querySelectorAll('[onclick^="startCamera"]');
+    cameraButtons.forEach(button => {
+        const type = button.getAttribute('onclick').match(/'(.+)'/)[1];
+        button.onclick = () => startCamera(type);
+    });
 }
 
-// Inicialización de botones
-function initializeButtons() {
-    document.getElementById('pdfButton').addEventListener('click', generatePDF);
-    document.getElementById('whatsappButton').addEventListener('click', shareWhatsApp);
+async function startCamera(type) {
+    activePreview = type;
+    const modal = document.getElementById('cameraModal');
+    const video = document.getElementById('cameraVideo');
+
+    if (!modal || !video) return;
+
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+            video: {
+                facingMode: 'environment',
+                width: { ideal: 1920 },
+                height: { ideal: 1080 }
+            },
+            audio: false
+        });
+
+        currentStream = stream;
+        video.srcObject = stream;
+        await video.play();
+        modal.classList.remove('hidden');
+    } catch (error) {
+        console.error('Error accessing camera:', error);
+        showToast('Error al acceder a la cámara', 'error');
+    }
 }
 
-// Función para agregar personal
+function stopCamera() {
+    if (currentStream) {
+        currentStream.getTracks().forEach(track => track.stop());
+        currentStream = null;
+    }
+
+    const modal = document.getElementById('cameraModal');
+    const video = document.getElementById('cameraVideo');
+
+    if (video) video.srcObject = null;
+    if (modal) modal.classList.add('hidden');
+    
+    activePreview = null;
+}
+
+function capturePhoto() {
+    const video = document.getElementById('cameraVideo');
+    if (!video || !video.videoWidth || !activePreview) {
+        showToast('Error al capturar la foto', 'error');
+        return;
+    }
+
+    try {
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(video, 0, 0);
+        
+        const imageData = canvas.toDataURL('image/jpeg', 0.9);
+        updatePreview(activePreview, imageData);
+        imageStore[activePreview] = imageData;
+        
+        stopCamera();
+        showToast('Foto capturada exitosamente');
+    } catch (error) {
+        console.error('Error capturing photo:', error);
+        showToast('Error al procesar la foto', 'error');
+    }
+}
+
+function updatePreview(type, imageData) {
+    const preview = document.getElementById(`preview${capitalize(type)}`);
+    if (!preview) return;
+
+    const placeholder = preview.querySelector('.placeholder-logo');
+    const loading = preview.querySelector('.loading');
+
+    if (loading) loading.classList.remove('hidden');
+    if (placeholder) placeholder.style.display = 'none';
+
+    const img = new Image();
+    img.onload = () => {
+        const oldImg = preview.querySelector('img');
+        if (oldImg) oldImg.remove();
+        
+        if (loading) loading.classList.add('hidden');
+        preview.appendChild(img);
+        showToast('Imagen actualizada exitosamente');
+    };
+    img.onerror = () => {
+        if (loading) loading.classList.add('hidden');
+        if (placeholder) placeholder.style.display = 'flex';
+        showToast('Error al cargar la imagen', 'error');
+    };
+    img.src = imageData;
+}
+
+// Firma digital
+function initializeSignaturePad() {
+    const canvas = document.getElementById('signaturePad');
+    if (!canvas) return;
+
+    // Configuración inicial del canvas
+    const ratio = Math.max(window.devicePixelRatio || 1, 1);
+    canvas.width = canvas.offsetWidth * ratio;
+    canvas.height = canvas.offsetHeight * ratio;
+    canvas.getContext('2d').scale(ratio, ratio);
+
+    signaturePad = new SignaturePad(canvas, {
+        minWidth: 0.5,
+        maxWidth: 2.5,
+        penColor: currentPenColor,
+        backgroundColor: 'rgb(255, 255, 255)',
+        throttle: 16,
+        velocityFilterWeight: 0.7
+    });
+
+    // Botones de firma
+    document.getElementById('clearSignature')?.addEventListener('click', () => {
+        signaturePad.clear();
+        imageStore.signature = null;
+        showToast('Firma borrada');
+    });
+
+    document.getElementById('changeColor')?.addEventListener('click', () => {
+        currentPenColor = currentPenColor === '#000000' ? '#0000FF' : '#000000';
+        signaturePad.penColor = currentPenColor;
+        showToast('Color de firma cambiado');
+    });
+
+    // Manejar redimensionamiento
+    window.addEventListener('resize', debounce(resizeSignaturePad, 250));
+}
+
+function resizeSignaturePad() {
+    if (!signaturePad || !signaturePad.canvas) return;
+
+    const canvas = signaturePad.canvas;
+    const ratio = Math.max(window.devicePixelRatio || 1, 1);
+    const data = signaturePad.toData();
+
+    canvas.width = canvas.offsetWidth * ratio;
+    canvas.height = canvas.offsetHeight * ratio;
+    canvas.getContext('2d').scale(ratio, ratio);
+    
+    signaturePad.clear();
+    if (data && data.length > 0) {
+        signaturePad.fromData(data);
+    }
+}
+
+// Manejo del personal
 function addPersonal() {
     const container = document.getElementById('personalList');
+    if (!container) return;
+
     const div = document.createElement('div');
-    div.className = 'flex gap-2 new-element';
-    div.innerHTML = `
-        <input type="text" name="personal[]" class="flex-grow p-2 border rounded focus:ring-2 focus:ring-blue-500" 
-               placeholder="Nombre del personal">
-        <button type="button" class="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 transition-all"
-                onclick="this.parentElement.remove()">
-            <i class="fas fa-minus"></i>
-        </button>
-    `;
-    container.appendChild(div);
-}
-
-// Generación de PDF
-async function generatePDF() {
-    showLoading();
-    try {
-        const content = await preparePDFContent();
-        const pdf = await html2pdf()
-            .set({
-                margin: 1,
-                filename: `reporte-limpieza-${new Date().toISOString().slice(0,10)}.pdf`,
-                image: { type: 'jpeg', quality: 0.98 },
-                html2canvas: { scale: 2 },
-                jsPDF: { unit: 'cm', format: 'a4', orientation: 'portrait' }
-            })
-            .from(content)
-            .save();
-            
-        showNotification('PDF generado exitosamente', 'success');
-    } catch (error) {
-        console.error('Error al generar PDF:', error);
-        showNotification('Error al generar el PDF', 'error');
-    } finally {
-        hideLoading();
-    }
-}
-
-async function preparePDFContent() {
-    const form = document.getElementById('cleaningForm');
-    const formData = new FormData(form);
-    const container = document.createElement('div');
-    container.style.padding = '20px';
-    container.style.color = '#000000';
-
-    // Contenido básico
-    container.innerHTML = `
-        <h1 style="text-align: center; color: #2563eb; font-size: 24px; margin-bottom: 20px;">
-            Reporte de Limpieza
-        </h1>
-        <div style="margin-bottom: 20px;">
-            <p><strong>Fecha:</strong> ${formData.get('fecha')}</p>
-            <p><strong>Departamento:</strong> ${formData.get('departamento')}</p>
-        </div>
-    `;
-
-    // Personal
-    const personal = Array.from(formData.getAll('personal[]')).filter(p => p);
-    if (personal.length) {
-        container.innerHTML += `
-            <div style="margin-bottom: 20px;">
-                <h2 style="color: #2563eb; font-size: 18px; margin-bottom: 10px;">Personal</h2>
-                <ul>${personal.map(p => `<li>${p}</li>`).join('')}</ul>
-            </div>
-        `;
-    }
-
-    // Fotos
-    const beforePreview = document.getElementById('previewBefore');
-    const afterPreview = document.getElementById('previewAfter');
+    div.className = 'personal-item';
     
-    if (beforePreview.classList.contains('has-image') || afterPreview.classList.contains('has-image')) {
-        container.innerHTML += '<h2 style="color: #2563eb; font-size: 18px; margin-bottom: 10px;">Fotos</h2>';
-        container.innerHTML += '<div style="display: flex; justify-content: space-between; margin-bottom: 20px;">';
-        
-        if (beforePreview.classList.contains('has-image')) {
-            const beforeImg = beforePreview.querySelector('img');
-            container.innerHTML += `
-                <div style="flex: 1; margin-right: 10px;">
-                    <p><strong>Antes:</strong></p>
-                    <img src="${beforeImg.src}" style="max-width: 100%; height: auto;">
-                </div>
-            `;
-        }
-        
-        if (afterPreview.classList.contains('has-image')) {
-            const afterImg = afterPreview.querySelector('img');
-            container.innerHTML += `
-                <div style="flex: 1;">
-                    <p><strong>Después:</strong></p>
-                    <img src="${afterImg.src}" style="max-width: 100%; height: auto;">
-                </div>
-            `;
-        }
-        
-        container.innerHTML += '</div>';
-    }
-
-    // Firma
-    if (!signaturePad.isEmpty()) {
-        container.innerHTML += `
-            <div style="margin-top: 20px;">
-                <h2 style="color: #2563eb; font-size: 18px; margin-bottom: 10px;">Firma</h2>
-                <img src="${signaturePad.toDataURL()}" style="max-width: 200px;">
-            </div>
-        `;
-    }
-
-    return container;
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.name = 'personal[]';
+    input.placeholder = 'Nombre del personal';
+    
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'btn-danger';
+    button.innerHTML = '<i class="fas fa-minus"></i>';
+    button.onclick = function() {
+        div.remove();
+    };
+    
+    div.appendChild(input);
+    div.appendChild(button);
+    container.appendChild(div);
+    
+    input.focus();
 }
 
 // Compartir por WhatsApp
-function shareWhatsApp() {
+async function shareWhatsApp() {
     const form = document.getElementById('cleaningForm');
-    const formData = new FormData(form);
-    
-    const message = `🧹 *Reporte de Limpieza*\n\n` +
-                   `📅 Fecha: ${formData.get('fecha')}\n` +
-                   `🏢 Departamento: ${formData.get('departamento')}\n` +
-                   `👥 Personal: ${Array.from(formData.getAll('personal[]')).filter(p => p).join(', ')}`;
-    
-    window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank');
-    showNotification('Abriendo WhatsApp...', 'success');
+    if (!form) return;
+
+    const fecha = form.querySelector('#fecha')?.value;
+    const departamento = form.querySelector('#departamento')?.value;
+
+    if (!fecha || !departamento) {
+        showToast('Por favor complete los campos requeridos', 'error');
+        return;
+    }
+
+    const personal = Array.from(form.querySelectorAll('input[name="personal[]"]'))
+        .map(input => input.value.trim())
+        .filter(Boolean)
+        .join(', ');
+
+    try {
+        // Preparar imágenes para compartir
+        const imagesToShare = [];
+        let message = `🧹 *Control de Limpieza*\n\n` +
+                     `📅 Fecha: ${fecha}\n` +
+                     `🏢 Departamento: ${departamento}\n`;
+
+        if (personal) {
+            message += `👥 Personal: ${personal}\n\n`;
+        }
+
+        // Procesar imágenes si existen
+        if (imageStore.before || imageStore.after || (signaturePad && !signaturePad.isEmpty())) {
+            if (imageStore.before) {
+                message += '📸 Foto Antes adjunta\n';
+                imagesToShare.push(processImage(imageStore.before, 'antes'));
+            }
+            if (imageStore.after) {
+                message += '📸 Foto Después adjunta\n';
+                imagesToShare.push(processImage(imageStore.after, 'despues'));
+            }
+            if (signaturePad && !signaturePad.isEmpty()) {
+                imageStore.signature = signaturePad.toDataURL();
+                message += '✍️ Firma adjunta\n';
+                imagesToShare.push(processImage(imageStore.signature, 'firma'));
+            }
+
+            // Intentar compartir con imágenes
+            if (navigator.share && navigator.canShare) {
+                try {
+                    const files = await Promise.all(imagesToShare);
+                    const shareData = {
+                        text: message,
+                        files: files
+                    };
+
+                    if (navigator.canShare(shareData)) {
+                        await navigator.share(shareData);
+                        return;
+                    }
+                } catch (error) {
+                    console.error('Error sharing files:', error);
+                }
+            }
+        }
+
+        // Fallback: compartir solo texto por WhatsApp Web
+        window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank');
+        showToast('Abriendo WhatsApp...');
+
+    } catch (error) {
+        console.error('Error sharing:', error);
+        showToast('Error al compartir', 'error');
+    }
 }
 
-// Reiniciar formulario
+// Función auxiliar para procesar imágenes
+async function processImage(dataUrl, name) {
+    try {
+        const response = await fetch(dataUrl);
+        const blob = await response.blob();
+        return new File([blob], `${name}.jpg`, { type: 'image/jpeg' });
+    } catch (error) {
+        console.error('Error processing image:', error);
+        throw error;
+    }
+}
+
+// Reset formulario
 function initializeFormReset() {
-    document.getElementById('resetForm').addEventListener('click', () => {
+    document.getElementById('resetForm')?.addEventListener('click', () => {
         if (confirm('¿Estás seguro de que quieres limpiar todo el formulario?')) {
-            document.getElementById('cleaningForm').reset();
-            signaturePad.clear();
-            
-            ['Before', 'After'].forEach(type => {
-                resetPreviewArea(document.getElementById(`preview${type}`));
-            });
-            
-            // Mantener solo un campo de personal
-            const personalList = document.getElementById('personalList');
-            personalList.innerHTML = `
-                <div class="flex gap-2">
-                    <input type="text" name="personal[]" 
-                           class="flex-grow p-2 border rounded focus:ring-2 focus:ring-blue-500"
-                           placeholder="Nombre del personal">
-                    <button type="button" onclick="addPersonal()" 
-                            class="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600 transition-all">
-                        <i class="fas fa-plus"></i>
-                    </button>
-                </div>
-            `;
-            
-            showNotification('Formulario reiniciado', 'success');
+            resetForm();
         }
     });
 }
 
-// Utilidades
-function showNotification(message, type = 'success') {
-    const notification = document.createElement('div');
-    notification.className = `notification ${type}`;
-    notification.textContent = message;
-    document.body.appendChild(notification);
+function resetForm() {
+    const form = document.getElementById('cleaningForm');
+    if (!form) return;
+
+    form.reset();
     
+    if (signaturePad) {
+        signaturePad.clear();
+    }
+    
+    ['Before', 'After'].forEach(type => {
+        const preview = document.getElementById(`preview${type}`);
+        if (preview) {
+            const img = preview.querySelector('img');
+            if (img) img.remove();
+            
+            const placeholder = preview.querySelector('.placeholder-logo');
+            if (placeholder) placeholder.style.display = 'flex';
+        }
+    });
+    
+    // Limpiar almacenamiento
+    imageStore.before = null;
+    imageStore.after = null;
+    imageStore.signature = null;
+    
+    // Resetear lista de personal
+    const personalList = document.getElementById('personalList');
+    if (personalList) {
+        personalList.innerHTML = `
+            <div class="personal-item">
+                <input type="text" name="personal[]" placeholder="Nombre del personal">
+                <button type="button" class="btn-primary" onclick="addPersonal()">
+                    <i class="fas fa-plus"></i>
+                </button>
+            </div>
+        `;
+    }
+    
+    showToast('Formulario reiniciado');
+}
+
+// Utilidades
+function showToast(message, type = 'success') {
+    const toast = document.getElementById('toast');
+    if (!toast) return;
+
+    toast.textContent = message;
+    toast.className = `toast ${type}`;
+    toast.style.opacity = '1';
+
     setTimeout(() => {
-        notification.style.opacity = '0';
-        setTimeout(() => notification.remove(), 300);
+        toast.style.opacity = '0';
     }, 3000);
 }
 
-function showLoading() {
-    document.getElementById('loadingModal').classList.remove('hidden');
-    document.getElementById('loadingModal').classList.add('flex');
+function capitalize(string) {
+    return string.charAt(0).toUpperCase() + string.slice(1);
 }
 
-function hideLoading() {
-    document.getElementById('loadingModal').classList.add('hidden');
-    document.getElementById('loadingModal').classList.remove('flex');
+function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+        const later = () => {
+            clearTimeout(timeout);
+            func(...args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+    };
+}// Variables globales
+let signaturePad;
+let currentPenColor = '#000000';
+let currentStream = null;
+let activePreview = null;
+
+// Almacenamiento de imágenes
+const imageStore = {
+    before: null,
+    after: null,
+    signature: null
+};
+
+// Inicialización cuando el DOM está listo
+document.addEventListener('DOMContentLoaded', () => {
+    initializeTheme();
+    initializeSignaturePad();
+    initializeCamera();
+    initializeFormReset();
+    initializePhotoSystem();
+    setupPhotoInputs();
+});
+
+// Inicialización del tema
+function initializeTheme() {
+    const defaultColors = {
+        bgColor: '#f5f5f5',
+        primaryColor: '#3b82f6',
+        textColor: '#1a1a1a'
+    };
+
+    Object.entries(defaultColors).forEach(([key, defaultValue]) => {
+        const input = document.getElementById(key);
+        if (!input) return;
+
+        // Cargar color guardado o usar default
+        const savedColor = localStorage.getItem(key) || defaultValue;
+        input.value = savedColor;
+        document.documentElement.style.setProperty(`--${key.replace('Color', '')}-color`, savedColor);
+
+        // Manejar cambios
+        input.addEventListener('input', (e) => {
+            const color = e.target.value;
+            document.documentElement.style.setProperty(`--${key.replace('Color', '')}-color`, color);
+            localStorage.setItem(key, color);
+        });
+    });
+}
+
+// Sistema de fotos
+function initializePhotoSystem() {
+    ['Before', 'After'].forEach(type => {
+        const preview = document.getElementById(`preview${type}`);
+        const fileInput = document.getElementById(`fileInput${type}`);
+        const chooseBtn = document.getElementById(`choose${type}`);
+
+        if (preview) {
+            preview.addEventListener('click', () => handlePreviewClick(type));
+        }
+
+        if (chooseBtn) {
+            chooseBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (fileInput) fileInput.click();
+            });
+        }
+
+        if (fileInput) {
+            fileInput.addEventListener('change', (e) => handleFileSelect(e, type.toLowerCase()));
+        }
+    });
+}
+
+function setupPhotoInputs() {
+    const modal = document.getElementById('cameraModal');
+    const closeBtn = document.getElementById('closeModal');
+    const captureBtn = document.getElementById('captureBtn');
+
+    if (modal) {
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) stopCamera();
+        });
+    }
+
+    if (closeBtn) {
+        closeBtn.addEventListener('click', stopCamera);
+    }
+
+    if (captureBtn) {
+        captureBtn.addEventListener('click', capturePhoto);
+    }
+
+    // Manejar tecla Escape
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && modal && !modal.classList.contains('hidden')) {
+            stopCamera();
+        }
+    });
+}
+
+function handlePreviewClick(type) {
+    const preview = document.getElementById(`preview${type}`);
+    if (!preview || preview.querySelector('img')) return;
+    
+    const fileInput = document.getElementById(`fileInput${type}`);
+    if (fileInput) fileInput.click();
+}
+
+function handleFileSelect(event, type) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+        showToast('Por favor selecciona una imagen válida', 'error');
+        return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        updatePreview(type, e.target.result);
+        imageStore[type] = e.target.result;
+    };
+    reader.onerror = () => showToast('Error al cargar la imagen', 'error');
+    reader.readAsDataURL(file);
+}
+
+// Manejo de la cámara
+function initializeCamera() {
+    const cameraButtons = document.querySelectorAll('[onclick^="startCamera"]');
+    cameraButtons.forEach(button => {
+        const type = button.getAttribute('onclick').match(/'(.+)'/)[1];
+        button.onclick = () => startCamera(type);
+    });
+}
+
+async function startCamera(type) {
+    activePreview = type;
+    const modal = document.getElementById('cameraModal');
+    const video = document.getElementById('cameraVideo');
+
+    if (!modal || !video) return;
+
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+            video: {
+                facingMode: 'environment',
+                width: { ideal: 1920 },
+                height: { ideal: 1080 }
+            },
+            audio: false
+        });
+
+        currentStream = stream;
+        video.srcObject = stream;
+        await video.play();
+        modal.classList.remove('hidden');
+    } catch (error) {
+        console.error('Error accessing camera:', error);
+        showToast('Error al acceder a la cámara', 'error');
+    }
+}
+
+function stopCamera() {
+    if (currentStream) {
+        currentStream.getTracks().forEach(track => track.stop());
+        currentStream = null;
+    }
+
+    const modal = document.getElementById('cameraModal');
+    const video = document.getElementById('cameraVideo');
+
+    if (video) video.srcObject = null;
+    if (modal) modal.classList.add('hidden');
+    
+    activePreview = null;
+}
+
+function capturePhoto() {
+    const video = document.getElementById('cameraVideo');
+    if (!video || !video.videoWidth || !activePreview) {
+        showToast('Error al capturar la foto', 'error');
+        return;
+    }
+
+    try {
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(video, 0, 0);
+        
+        const imageData = canvas.toDataURL('image/jpeg', 0.9);
+        updatePreview(activePreview, imageData);
+        imageStore[activePreview] = imageData;
+        
+        stopCamera();
+        showToast('Foto capturada exitosamente');
+    } catch (error) {
+        console.error('Error capturing photo:', error);
+        showToast('Error al procesar la foto', 'error');
+    }
+}
+
+function updatePreview(type, imageData) {
+    const preview = document.getElementById(`preview${capitalize(type)}`);
+    if (!preview) return;
+
+    const placeholder = preview.querySelector('.placeholder-logo');
+    const loading = preview.querySelector('.loading');
+
+    if (loading) loading.classList.remove('hidden');
+    if (placeholder) placeholder.style.display = 'none';
+
+    const img = new Image();
+    img.onload = () => {
+        const oldImg = preview.querySelector('img');
+        if (oldImg) oldImg.remove();
+        
+        if (loading) loading.classList.add('hidden');
+        preview.appendChild(img);
+        showToast('Imagen actualizada exitosamente');
+    };
+    img.onerror = () => {
+        if (loading) loading.classList.add('hidden');
+        if (placeholder) placeholder.style.display = 'flex';
+        showToast('Error al cargar la imagen', 'error');
+    };
+    img.src = imageData;
+}
+
+// Firma digital
+function initializeSignaturePad() {
+    const canvas = document.getElementById('signaturePad');
+    if (!canvas) return;
+
+    // Configuración inicial del canvas
+    const ratio = Math.max(window.devicePixelRatio || 1, 1);
+    canvas.width = canvas.offsetWidth * ratio;
+    canvas.height = canvas.offsetHeight * ratio;
+    canvas.getContext('2d').scale(ratio, ratio);
+
+    signaturePad = new SignaturePad(canvas, {
+        minWidth: 0.5,
+        maxWidth: 2.5,
+        penColor: currentPenColor,
+        backgroundColor: 'rgb(255, 255, 255)',
+        throttle: 16,
+        velocityFilterWeight: 0.7
+    });
+
+    // Botones de firma
+    document.getElementById('clearSignature')?.addEventListener('click', () => {
+        signaturePad.clear();
+        imageStore.signature = null;
+        showToast('Firma borrada');
+    });
+
+    document.getElementById('changeColor')?.addEventListener('click', () => {
+        currentPenColor = currentPenColor === '#000000' ? '#0000FF' : '#000000';
+        signaturePad.penColor = currentPenColor;
+        showToast('Color de firma cambiado');
+    });
+
+    // Manejar redimensionamiento
+    window.addEventListener('resize', debounce(resizeSignaturePad, 250));
+}
+
+function resizeSignaturePad() {
+    if (!signaturePad || !signaturePad.canvas) return;
+
+    const canvas = signaturePad.canvas;
+    const ratio = Math.max(window.devicePixelRatio || 1, 1);
+    const data = signaturePad.toData();
+
+    canvas.width = canvas.offsetWidth * ratio;
+    canvas.height = canvas.offsetHeight * ratio;
+    canvas.getContext('2d').scale(ratio, ratio);
+    
+    signaturePad.clear();
+    if (data && data.length > 0) {
+        signaturePad.fromData(data);
+    }
+}
+
+// Manejo del personal
+function addPersonal() {
+    const container = document.getElementById('personalList');
+    if (!container) return;
+
+    const div = document.createElement('div');
+    div.className = 'personal-item';
+    
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.name = 'personal[]';
+    input.placeholder = 'Nombre del personal';
+    
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'btn-danger';
+    button.innerHTML = '<i class="fas fa-minus"></i>';
+    button.onclick = function() {
+        div.remove();
+    };
+    
+    div.appendChild(input);
+    div.appendChild(button);
+    container.appendChild(div);
+    
+    input.focus();
+}
+
+// Compartir por WhatsApp
+async function shareWhatsApp() {
+    const form = document.getElementById('cleaningForm');
+    if (!form) return;
+
+    const fecha = form.querySelector('#fecha')?.value;
+    const departamento = form.querySelector('#departamento')?.value;
+
+    if (!fecha || !departamento) {
+        showToast('Por favor complete los campos requeridos', 'error');
+        return;
+    }
+
+    const personal = Array.from(form.querySelectorAll('input[name="personal[]"]'))
+        .map(input => input.value.trim())
+        .filter(Boolean)
+        .join(', ');
+
+    try {
+        // Preparar imágenes para compartir
+        const imagesToShare = [];
+        let message = `🧹 *Control de Limpieza*\n\n` +
+                     `📅 Fecha: ${fecha}\n` +
+                     `🏢 Departamento: ${departamento}\n`;
+
+        if (personal) {
+            message += `👥 Personal: ${personal}\n\n`;
+        }
+
+        // Procesar imágenes si existen
+        if (imageStore.before || imageStore.after || (signaturePad && !signaturePad.isEmpty())) {
+            if (imageStore.before) {
+                message += '📸 Foto Antes adjunta\n';
+                imagesToShare.push(processImage(imageStore.before, 'antes'));
+            }
+            if (imageStore.after) {
+                message += '📸 Foto Después adjunta\n';
+                imagesToShare.push(processImage(imageStore.after, 'despues'));
+            }
+            if (signaturePad && !signaturePad.isEmpty()) {
+                imageStore.signature = signaturePad.toDataURL();
+                message += '✍️ Firma adjunta\n';
+                imagesToShare.push(processImage(imageStore.signature, 'firma'));
+            }
+
+            // Intentar compartir con imágenes
+            if (navigator.share && navigator.canShare) {
+                try {
+                    const files = await Promise.all(imagesToShare);
+                    const shareData = {
+                        text: message,
+                        files: files
+                    };
+
+                    if (navigator.canShare(shareData)) {
+                        await navigator.share(shareData);
+                        return;
+                    }
+                } catch (error) {
+                    console.error('Error sharing files:', error);
+                }
+            }
+        }
+
+        // Fallback: compartir solo texto por WhatsApp Web
+        window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank');
+        showToast('Abriendo WhatsApp...');
+
+    } catch (error) {
+        console.error('Error sharing:', error);
+        showToast('Error al compartir', 'error');
+    }
+}
+
+// Función auxiliar para procesar imágenes
+async function processImage(dataUrl, name) {
+    try {
+        const response = await fetch(dataUrl);
+        const blob = await response.blob();
+        return new File([blob], `${name}.jpg`, { type: 'image/jpeg' });
+    } catch (error) {
+        console.error('Error processing image:', error);
+        throw error;
+    }
+}
+
+// Reset formulario
+function initializeFormReset() {
+    document.getElementById('resetForm')?.addEventListener('click', () => {
+        if (confirm('¿Estás seguro de que quieres limpiar todo el formulario?')) {
+            resetForm();
+        }
+    });
+}
+
+function resetForm() {
+    const form = document.getElementById('cleaningForm');
+    if (!form) return;
+
+    form.reset();
+    
+    if (signaturePad) {
+        signaturePad.clear();
+    }
+    
+    ['Before', 'After'].forEach(type => {
+        const preview = document.getElementById(`preview${type}`);
+        if (preview) {
+            const img = preview.querySelector('img');
+            if (img) img.remove();
+            
+            const placeholder = preview.querySelector('.placeholder-logo');
+            if (placeholder) placeholder.style.display = 'flex';
+        }
+    });
+    
+    // Limpiar almacenamiento
+    imageStore.before = null;
+    imageStore.after = null;
+    imageStore.signature = null;
+    
+    // Resetear lista de personal
+    const personalList = document.getElementById('personalList');
+    if (personalList) {
+        personalList.innerHTML = `
+            <div class="personal-item">
+                <input type="text" name="personal[]" placeholder="Nombre del personal">
+                <button type="button" class="btn-primary" onclick="addPersonal()">
+                    <i class="fas fa-plus"></i>
+                </button>
+            </div>
+        `;
+    }
+    
+    showToast('Formulario reiniciado');
+}
+
+// Utilidades
+function showToast(message, type = 'success') {
+    const toast = document.getElementById('toast');
+    if (!toast) return;
+
+    toast.textContent = message;
+    toast.className = `toast ${type}`;
+    toast.style.opacity = '1';
+
+    setTimeout(() => {
+        toast.style.opacity = '0';
+    }, 3000);
+}
+
+function capitalize(string) {
+    return string.charAt(0).toUpperCase() + string.slice(1);
+}
+
+function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+        const later = () => {
+            clearTimeout(timeout);
+            func(...args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+    };
 }
