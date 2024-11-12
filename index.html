@@ -4,156 +4,168 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Control de Limpieza</title>
-    
-    <!-- CDNs -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/signature_pad/4.1.5/signature_pad.umd.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    
     <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/signature_pad/1.5.3/signature_pad.min.js"></script>
 </head>
-<body class="min-h-screen">
-    <!-- Barra superior fija -->
-    <header class="fixed top-0 left-0 right-0 bg-gray-800 text-white p-4 z-50">
-        <div class="container mx-auto flex justify-between items-center">
-            <h1 class="text-xl font-bold">Control de Limpieza</h1>
-            <div class="flex items-center gap-4">
-                <div class="flex items-center gap-2">
-                    <label>Fondo:</label>
-                    <input type="color" id="bgColor" value="#ffffff" class="w-8 h-8 rounded">
-                
-                    <label>Principal:</label>
-                    <input type="color" id="primaryColor" value="#3b82f6" class="w-8 h-8 rounded">
-                
-                    <label>Texto:</label>
-                    <input type="color" id="textColor" value="#000000" class="w-8 h-8 rounded">
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>Control de Limpieza</h1>
+            <div class="theme-controls">
+                <div class="color-picker">
+                    <label for="bgColor">Fondo:</label>
+                    <input type="color" id="bgColor">
                 </div>
-                <button id="themeToggle" class="px-4 py-2 bg-blue-500 rounded-lg hover:bg-blue-600 transition-all">
-                    <i class="fas fa-moon"></i>
-                </button>
+                <div class="color-picker">
+                    <label for="primaryColor">Principal:</label>
+                    <input type="color" id="primaryColor">
+                </div>
+                <div class="color-picker">
+                    <label for="textColor">Texto:</label>
+                    <input type="color" id="textColor">
+                </div>
             </div>
-        </div>
-    </header>
+        </header>
 
-    <!-- Contenido principal -->
-    <main class="container mx-auto p-4 mt-20">
-        <form id="cleaningForm" class="space-y-6">
-            <!-- Información básica -->
-            <section class="bg-white rounded-lg p-6 shadow-lg transition-all">
-                <h2 class="text-xl font-bold mb-4 flex items-center gap-2">
-                    <i class="fas fa-info-circle text-blue-500"></i>
-                    Información Básica
-                </h2>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                        <label class="block mb-2">Fecha</label>
-                        <input type="date" name="fecha" required 
-                               class="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500">
+        <main class="main-content">
+            <form id="cleaningForm">
+                <!-- Información Básica -->
+                <section class="card">
+                    <div class="card-header">
+                        <h2>Información Básica</h2>
                     </div>
-                    <div>
-                        <label class="block mb-2">Departamento</label>
-                        <input type="text" name="departamento" required 
-                               class="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500">
-                    </div>
-                </div>
-            </section>
-
-            <!-- Personal -->
-            <section class="bg-white rounded-lg p-6 shadow-lg transition-all">
-                <h2 class="text-xl font-bold mb-4 flex items-center gap-2">
-                    <i class="fas fa-users text-green-500"></i>
-                    Personal
-                </h2>
-                <div id="personalList" class="space-y-4">
-                    <div class="flex gap-2">
-                        <input type="text" name="personal[]" 
-                               class="flex-grow p-2 border rounded focus:ring-2 focus:ring-blue-500"
-                               placeholder="Nombre del personal">
-                        <button type="button" onclick="addPersonal()" 
-                                class="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600 transition-all">
-                            <i class="fas fa-plus"></i>
-                        </button>
-                    </div>
-                </div>
-            </section>
-
-            <!-- Fotos -->
-            <section class="bg-white rounded-lg p-6 shadow-lg transition-all">
-                <h2 class="text-xl font-bold mb-4 flex items-center gap-2">
-                    <i class="fas fa-camera text-purple-500"></i>
-                    Fotos
-                </h2>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div>
-                        <label class="block mb-2">Antes</label>
-                        <div class="photo-upload">
-                            <input type="file" id="fotoBefore" accept="image/*" class="hidden">
-                            <div id="previewBefore" class="photo-preview">
-                                <i class="fas fa-camera text-3xl mb-2"></i>
-                                <p>Click para subir foto</p>
+                    <div class="card-body">
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label for="fecha">Fecha</label>
+                                <input type="date" id="fecha" name="fecha" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="departamento">Departamento</label>
+                                <input type="text" id="departamento" name="departamento" required>
                             </div>
                         </div>
                     </div>
-                    <div>
-                        <label class="block mb-2">Después</label>
-                        <div class="photo-upload">
-                            <input type="file" id="fotoAfter" accept="image/*" class="hidden">
-                            <div id="previewAfter" class="photo-preview">
-                                <i class="fas fa-camera text-3xl mb-2"></i>
-                                <p>Click para subir foto</p>
+                </section>
+
+                <!-- Personal -->
+                <section class="card">
+                    <div class="card-header">
+                        <h2>Personal</h2>
+                    </div>
+                    <div class="card-body">
+                        <div id="personalList" class="personal-list">
+                            <div class="personal-item">
+                                <input type="text" name="personal[]" placeholder="Nombre del personal">
+                                <button type="button" class="btn-primary" onclick="addPersonal()">
+                                    <i class="fas fa-plus"></i>
+                                </button>
                             </div>
                         </div>
                     </div>
-                </div>
-            </section>
+                </section>
 
-            <!-- Firma -->
-            <section class="bg-white rounded-lg p-6 shadow-lg transition-all">
-                <h2 class="text-xl font-bold mb-4 flex items-center gap-2">
-                    <i class="fas fa-signature text-blue-500"></i>
-                    Firma Digital
-                </h2>
-                <div class="space-y-4">
-                    <canvas id="signaturePad"></canvas>
-                    <div class="flex gap-2">
-                        <button type="button" id="clearSignature" 
-                                class="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 transition-all">
-                            <i class="fas fa-eraser mr-2"></i>Borrar Firma
-                        </button>
-                        <button type="button" id="changeColor" 
-                                class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-all">
-                            <i class="fas fa-palette mr-2"></i>Cambiar Color
-                        </button>
+                <!-- Fotos -->
+                <section class="card">
+                    <div class="card-header">
+                        <h2>Fotos</h2>
                     </div>
-                </div>
-            </section>
+                    <div class="card-body">
+                        <div class="photos-grid">
+                            <div class="image-box">
+                                <h3>Antes</h3>
+                                <div class="preview-wrapper" id="previewBefore">
+                                    <div class="placeholder-logo">
+                                        <i class="fas fa-camera"></i>
+                                        <p>Toca para capturar una foto</p>
+                                    </div>
+                                    <div class="loading hidden"></div>
+                                </div>
+                                <div class="button-group">
+                                    <input type="file" id="fileInputBefore" accept="image/*" class="hidden">
+                                    <button type="button" id="chooseBefore" class="btn-secondary">
+                                        <i class="fas fa-image"></i> Elegir
+                                    </button>
+                                    <button type="button" class="btn-primary" onclick="startCamera('before')">
+                                        <i class="fas fa-camera"></i> Cámara
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="image-box">
+                                <h3>Después</h3>
+                                <div class="preview-wrapper" id="previewAfter">
+                                    <div class="placeholder-logo">
+                                        <i class="fas fa-camera"></i>
+                                        <p>Toca para capturar una foto</p>
+                                    </div>
+                                    <div class="loading hidden"></div>
+                                </div>
+                                <div class="button-group">
+                                    <input type="file" id="fileInputAfter" accept="image/*" class="hidden">
+                                    <button type="button" id="chooseAfter" class="btn-secondary">
+                                        <i class="fas fa-image"></i> Elegir
+                                    </button>
+                                    <button type="button" class="btn-primary" onclick="startCamera('after')">
+                                        <i class="fas fa-camera"></i> Cámara
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
 
-            <!-- Botones de acción -->
-            <div class="flex flex-wrap gap-4">
-                <button type="button" id="pdfButton" 
-                        class="flex-1 px-6 py-3 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-all">
-                    <i class="fas fa-file-pdf mr-2"></i>Generar PDF
-                </button>
-                <button type="button" id="whatsappButton" 
-                        class="flex-1 px-6 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-all">
-                    <i class="fab fa-whatsapp mr-2"></i>Enviar WhatsApp
-                </button>
-                <button type="button" id="resetForm" 
-                        class="flex-1 px-6 py-3 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-all">
-                    <i class="fas fa-trash-alt mr-2"></i>Limpiar Todo
+                <!-- Firma Digital -->
+                <section class="card">
+                    <div class="card-header">
+                        <h2>Firma Digital</h2>
+                    </div>
+                    <div class="card-body">
+                        <canvas id="signaturePad"></canvas>
+                        <div class="button-group signature-buttons">
+                            <button type="button" id="clearSignature" class="btn-secondary">
+                                <i class="fas fa-eraser"></i> Borrar Firma
+                            </button>
+                            <button type="button" id="changeColor" class="btn-primary">
+                                <i class="fas fa-palette"></i> Cambiar Color
+                            </button>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Botones de Acción -->
+                <div class="action-buttons">
+                    <button type="button" class="btn-whatsapp" onclick="shareWhatsApp()">
+                        <i class="fab fa-whatsapp"></i> Compartir por WhatsApp
+                    </button>
+                    <button type="button" class="btn-danger" id="resetForm">
+                        <i class="fas fa-trash"></i> Limpiar Todo
+                    </button>
+                </div>
+            </form>
+        </main>
+    </div>
+
+    <!-- Modal de Cámara -->
+    <div id="cameraModal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Capturar Foto</h3>
+                <button type="button" class="btn-icon" id="closeModal">
+                    <i class="fas fa-times"></i>
                 </button>
             </div>
-        </form>
-    </main>
-
-    <!-- Modal de carga -->
-    <div id="loadingModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50">
-        <div class="bg-white p-6 rounded-lg flex flex-col items-center">
-            <div class="loader"></div>
-            <p class="mt-4">Procesando...</p>
+            <div class="modal-body">
+                <video id="cameraVideo" autoplay playsinline></video>
+                <button type="button" class="btn-primary" id="captureBtn">
+                    <i class="fas fa-camera"></i> Capturar
+                </button>
+            </div>
         </div>
     </div>
+
+    <!-- Toast -->
+    <div id="toast" class="toast"></div>
 
     <script src="script.js"></script>
 </body>
